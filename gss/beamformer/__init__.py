@@ -1,1 +1,1 @@
-from .souden_mvdr import beamform_mvdr
+from .souden_mvdr import beamform_mvdr, beamform_mvdr_with_ref_channel

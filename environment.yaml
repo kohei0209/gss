@@ -1,0 +1,9 @@
+name: gss
+channels: 
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.10.8
+  - pytorch=1.12.1
+  - torchaudio
+  - cupy=10.2

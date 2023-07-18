@@ -53,7 +53,7 @@ def stft(
             pad_width[axis, :] = window_length - shift
         time_signal = cp.pad(time_signal, pad_width, mode="constant")
 
-    window = cp.blackman(window_length + 1)[:-1]
+    window = cp.blackman(window_length + 1)[:-1].astype(time_signal.dtype)
 
     time_signal_seg = segment_axis(
         time_signal, window_length, shift=shift, axis=axis, end="pad"
@@ -169,6 +169,70 @@ def istft(
         time_signal_seg,
         ...,
         (window * cp.real(irfft(stft_signal, n=size))[..., :window_length]).get(),
+    )
+    # The [..., :window_length] is the inverse of the window padding in rfft.
+
+    # Compensate fade-in and fade-out
+
+    assert fading in [None, True, False, "full", "half"], fading
+    if fading not in [None, False]:
+        pad_width = window_length - shift
+        if fading == "half":
+            pad_width /= 2
+        time_signal = time_signal[
+            ..., int(pad_width) : time_signal.shape[-1] - ceil(pad_width)
+        ]
+
+    return time_signal
+
+
+def istft_cupy(
+    stft_signal,
+    size: int = 1024,
+    shift: int = 256,
+    *,
+    fading: typing.Optional[typing.Union[bool, str]] = "full",
+):
+    """
+    Calculated the inverse short time Fourier transform to exactly reconstruct
+    the time signal.
+
+    ..note::
+        Be careful if you make modifications in the frequency domain (e.g.
+        beamforming) because the synthesis window is calculated according to
+        the unmodified! analysis window.
+
+    :param stft_signal: Single channel complex STFT signal
+        with dimensions (..., frames, size/2+1).
+    :param size: Scalar FFT-size.
+    :param shift: Scalar FFT-shift. Typically shift is a fraction of size.
+    :param fading: Removes the additional padding, if done during STFT.
+
+    :return: Single channel complex STFT signal
+    :return: Single channel time signal.
+    """
+    assert stft_signal.shape[-1] == size // 2 + 1, str(stft_signal.shape)
+
+    window_length = size
+
+    window = cp.blackman(window_length + 1)[:-1]
+    window = _biorthogonal_window_brute_force(window, shift)
+
+    # In the following, we use numpy.add.at since cupyx.scatter_add does not seem to be
+    # giving the same results. We should replace this with cupy.add.at once it is
+    # available in the stable release (see: https://github.com/cupy/cupy/pull/7077).
+
+    time_signal = cp.zeros(
+        (*stft_signal.shape[:-2], stft_signal.shape[-2] * shift + window_length - shift)
+    )
+
+    # Get the correct view to time_signal
+    time_signal_seg = segment_axis(time_signal, window_length, shift, end=None)
+    import cupyx
+    cupyx.scatter_add(
+        time_signal_seg,
+        ...,
+        (window * cp.real(irfft(stft_signal, n=size))[..., :window_length]),
     )
     # The [..., :window_length] is the inverse of the window padding in rfft.
 

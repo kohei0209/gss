@@ -198,6 +198,7 @@ def get_mvdr_vector_souden(
     noise_psd_matrix,
     ref_channel=None,
     eps=None,
+    return_ref_channel=False,
 ):
     assert noise_psd_matrix is not None
 
@@ -213,4 +214,7 @@ def get_mvdr_vector_souden(
         )
 
     beamformer = mat[..., ref_channel]
-    return beamformer
+    if return_ref_channel:
+        return beamformer, ref_channel
+    else:
+        return beamformer

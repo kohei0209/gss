@@ -11,6 +11,7 @@ from lhotse.utils import fastcopy
 
 from gss.bin.modes.cli_base import cli
 from gss.core.enhancer import get_enhancer
+from gss.core.enhancer_all import get_enhancer_all, metadata_collector
 from gss.utils.data_utils import post_process_manifests
 
 logging.basicConfig(
@@ -19,7 +20,6 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
-
 
 @cli.group()
 def enhance():
@@ -124,6 +124,24 @@ def common_options(func):
         default=False,
         help="If set, we will overwrite the enhanced audio files if they already exist.",
     )
+    @click.option(
+        "--precision",
+        "-p",
+        type=str,
+        default="float64",
+        # choices=["float32", "float64"],
+        help="Numerical precision",
+    )
+    @click.option(
+        "--enhance_all_sources",
+        type=bool,
+        default=False,
+    )
+    @click.option(
+        "--collect_metadata",
+        type=bool,
+        default=False,
+    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -171,6 +189,9 @@ def cuts_(
     profiler_output,
     force_overwrite,
     duration_tolerance,
+    precision,
+    enhance_all_sources,
+    collect_metadata,
 ):
     """
     Enhance segments (represented by cuts).
@@ -219,32 +240,63 @@ def cuts_(
     ).cut_into_windows(duration=max_segment_length)
 
     logger.info("Initializing GSS enhancer")
-    enhancer = get_enhancer(
-        cuts=cuts,
-        bss_iterations=bss_iterations,
-        context_duration=context_duration,
-        activity_garbage_class=use_garbage_class,
-        wpe=use_wpe,
-    )
+    assert not (collect_metadata and enhance_all_sources)
+    if collect_metadata:
+        collector = metadata_collector(
+            cuts=cuts,
+            bss_iterations=bss_iterations,
+            context_duration=context_duration,
+            activity_garbage_class=use_garbage_class,
+            dtype=precision,
+        )
+        _, metadata = collector.enhance_cuts(
+            cuts_per_segment,
+            enhanced_dir,
+            max_batch_duration=max_batch_duration,
+            max_batch_cuts=max_batch_cuts,
+            num_workers=num_workers,
+            num_buckets=num_buckets,
+            force_overwrite=force_overwrite,
+        )
+        import json
+        Path(enhanced_manifest).parent.mkdir(parents=True, exist_ok=True)
+        with open(enhanced_manifest, "w") as f:
+            json.dump(metadata, f, indent=4)
+    else:
+        get_enhancer_func = get_enhancer_all if enhance_all_sources else get_enhancer
+        enhancer = get_enhancer_func(
+            cuts=cuts,
+            bss_iterations=bss_iterations,
+            context_duration=context_duration,
+            activity_garbage_class=use_garbage_class,
+            wpe=use_wpe,
+            dtype=precision,
+        )
 
-    logger.info(f"Enhancing {len(frozenset(c.id for c in cuts_per_segment))} segments")
-    begin = time.time()
-    num_errors, out_cuts = enhancer.enhance_cuts(
-        cuts_per_segment,
-        enhanced_dir,
-        max_batch_duration=max_batch_duration,
-        max_batch_cuts=max_batch_cuts,
-        num_workers=num_workers,
-        num_buckets=num_buckets,
-        force_overwrite=force_overwrite,
-    )
-    end = time.time()
-    logger.info(f"Finished in {end-begin:.2f}s with {num_errors} errors")
+        logger.info(f"Enhancing {len(frozenset(c.id for c in cuts_per_segment))} segments")
+        begin = time.time()
+        num_errors, out_cuts = enhancer.enhance_cuts(
+            cuts_per_segment,
+            enhanced_dir,
+            max_batch_duration=max_batch_duration,
+            max_batch_cuts=max_batch_cuts,
+            num_workers=num_workers,
+            num_buckets=num_buckets,
+            force_overwrite=force_overwrite,
+        )
+        end = time.time()
+        logger.info(f"Finished in {end-begin:.2f}s with {num_errors} errors")
 
-    if enhanced_manifest is not None:
-        logger.info(f"Saving enhanced cuts manifest to {enhanced_manifest}")
-        out_cuts = post_process_manifests(out_cuts, enhanced_dir)
-        out_cuts.to_file(enhanced_manifest)
+        if enhanced_manifest is not None:
+            logger.info(f"Saving enhanced cuts manifest to {enhanced_manifest}")
+            if enhance_all_sources:
+                import json
+                Path(enhanced_manifest).parent.mkdir(parents=True, exist_ok=True)
+                with open(enhanced_manifest, "w") as f:
+                    json.dump(out_cuts, f, indent=4)
+            else:
+                out_cuts = post_process_manifests(out_cuts, enhanced_dir)
+                out_cuts.to_file(enhanced_manifest)
 
 
 @enhance.command(name="recording")

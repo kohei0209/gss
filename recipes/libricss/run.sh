@@ -1,7 +1,7 @@
 #!/bin/bash
 # This script is used to run the enhancement.
 set -euo pipefail
-nj=8
+nj=2
 rttm_dir=""
 affix="oracle"
 stage=0
@@ -10,17 +10,18 @@ stop_stage=100
 . ./path.sh
 . parse_options.sh
 
-CORPUS_DIR=/export/fs01/LibriCSS
+CORPUS_DIR=/mnt/kiso-qnap/acoustic_db/libricss/for_release
 DATA_DIR=data/
 EXP_DIR=exp/libricss_${affix}
 
-cmd="queue-ackgpu.pl --gpu 1 --mem 4G --config conf/gpu.conf"
+# cmd="queue-ackgpu.pl --gpu 1 --mem 4G --config conf/gpu.conf"
+cmd="run.pl"
 
 mkdir -p $DATA_DIR
 mkdir -p $EXP_DIR
 
 if [ -z $rttm_dir ]; then
-    supervisions_path=$DATA_DIR/libricss_supervisions_all.jsonl.gz
+    supervisions_path=$DATA_DIR/libricss-mdm_supervisions_all.jsonl.gz
 else
     supervisions_path=$EXP_DIR/supervisions_${affix}.jsonl.gz
 fi
@@ -39,7 +40,7 @@ if [ $stage -le 2 ] && [ $stop_stage -ge 2 ]; then
     echo "Stage 2: Prepare cut set"
     # --force-eager must be set if recordings are not sorted by id
     lhotse cut simple --force-eager \
-      -r $DATA_DIR/libricss_recordings_all.jsonl.gz \
+      -r $DATA_DIR/libricss-mdm_recordings_all.jsonl.gz \
       -s $supervisions_path \
       $EXP_DIR/cuts.jsonl.gz
 fi
@@ -59,15 +60,16 @@ if [ $stage -le 5 ] && [ $stop_stage -ge 5 ]; then
     echo "Stage 5: Enhance segments using GSS"
     $cmd JOB=1:$nj $EXP_DIR/log/enhance.JOB.log \
         gss enhance cuts \
-          $EXP_DIR/cuts.jsonl.gz $EXP_DIR/split$nj/cuts_per_segment.JOB.jsonl.gz \
-          $EXP_DIR/enhanced \
-          --use-garbage-class \
-          --channels 0,1,2,3,4,5,6 \
-          --bss-iterations 10 \
-          --context-duration 15.0 \
-          --min-segment-length 0.1 \
-          --max-segment-length 15.0 \
-          --max-batch-duration 20.0 \
-          --num-buckets 3 \
-          --force-overwrite
+            $EXP_DIR/cuts.jsonl.gz $EXP_DIR/split$nj/cuts_per_segment.JOB.jsonl.gz \
+            $EXP_DIR/enhanced \
+            --use-garbage-class \
+            --channels 0,1,2,3,4,5,6 \
+            --bss-iterations 10 \
+            --context-duration 15.0 \
+            --min-segment-length 0.1 \
+            --max-segment-length 15.0 \
+            --max-batch-duration 20.0 \
+            --num-buckets 3 \
+            --force-overwrite \
+            --precision float32
 fi

@@ -29,7 +29,7 @@ class GssDataset(Dataset):
             'activity': (#speakers x total #samples) int tensor denoting speaker activities
             'cuts': original cuts (sorted by start time)
             'speaker': str, speaker ID
-            'recording': str, recording ID
+            'recording': str,gs recording ID
             'start': float tensor, start times of the cuts w.r.t. concatenated sequence
         }
     In the returned tensor, the ``audio`` and ``activity`` will be used to perform the
@@ -88,6 +88,7 @@ class GssDataset(Dataset):
         # Load audio
         audio = concatenated.load_audio()
         activity = np.concatenate(activity, axis=1)
+        # audio = activity = None  # when collecting metadata
 
         return {
             "audio": audio,

@@ -4,15 +4,21 @@ import cupy as cp
 
 from gss.cacgmm import CACGMMTrainer
 
+precisions = {
+    "float32": cp.float32,
+    "float64": cp.float64,
+}
+
 
 @dataclass
 class GSS:
     iterations: int
     iterations_post: int
+    dtype: str
 
     def __call__(self, Obs, acitivity_freq):
-
-        initialization = cp.asarray(acitivity_freq, dtype=cp.float64)
+        # dtype = cp.float32 # originally cp.float64
+        initialization = cp.asarray(acitivity_freq, dtype=precisions[self.dtype])
         initialization = cp.where(initialization == 0, 1e-10, initialization)
         initialization = initialization / cp.sum(initialization, keepdims=True, axis=0)
         initialization = cp.repeat(initialization[None, ...], 513, axis=0)
