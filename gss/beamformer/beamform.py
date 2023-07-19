@@ -131,6 +131,7 @@ def get_optimal_reference_channel(
     target_psd_matrix,
     noise_psd_matrix,
     eps=None,
+    return_snrs=False
 ):
     if w_mat.ndim != 3:
         raise ValueError(
@@ -161,7 +162,11 @@ def get_optimal_reference_channel(
     # Raises an exception when np.inf and/or np.NaN was in target_psd_matrix
     # or noise_psd_matrix
     assert cp.all(cp.isfinite(SNR)), SNR
-    return cp.argmax(SNR.real)
+    ref_channel = cp.argmax(SNR.real)
+    if return_snrs:
+        return ref_channel, SNR.real
+    else:
+        return ref_channel
 
 
 def stable_solve(A, B):
@@ -196,9 +201,8 @@ def stable_solve(A, B):
 def get_mvdr_vector_souden(
     target_psd_matrix,
     noise_psd_matrix,
-    ref_channel=None,
     eps=None,
-    return_ref_channel=False,
+    return_snrs=False,
 ):
     assert noise_psd_matrix is not None
 
@@ -208,13 +212,12 @@ def get_mvdr_vector_souden(
         eps = cp.finfo(lambda_.dtype).tiny
     mat = phi / cp.maximum(lambda_.real, eps)
 
-    if ref_channel is None:
-        ref_channel = get_optimal_reference_channel(
-            mat, target_psd_matrix, noise_psd_matrix, eps=eps
-        )
+    ref_channel, snrs = get_optimal_reference_channel(
+        mat, target_psd_matrix, noise_psd_matrix, eps=eps, return_snrs=return_snrs,
+    )
 
     beamformer = mat[..., ref_channel]
-    if return_ref_channel:
-        return beamformer, ref_channel
+    if return_snrs:
+        return beamformer, snrs
     else:
         return beamformer

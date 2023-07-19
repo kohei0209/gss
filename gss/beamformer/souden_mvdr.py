@@ -12,7 +12,7 @@ from gss.beamformer.utils import morph
 # The _Beamformer class is modified from:
 # https://github.com/fgnt/pb_chime5/blob/master/pb_chime5/speech_enhancement/beamforming_wrapper.py
 
-
+"""
 class _Beamformer:
     def __init__(
         self,
@@ -72,37 +72,15 @@ class _Beamformer:
     @cached_property
     def X_hat_mvdr_souden_ban(self):
         return apply_beamforming_vector(self._w_mvdr_souden_ban, self.Y).T
+"""
 
-
-def beamform_mvdr(Y, X_mask, N_mask, ban=False):
-    """
-    Souden MVDR beamformer.
-    Args:
-        Y: CuPy array of shape (channel, time, frequency).
-        X_mask: CuPy array of shape (time, frequency).
-        N_mask: CuPy array of shape (time, frequency).
-        ban: If True, use blind analytic normalization.
-    Returns:
-        X_hat: Beamformed signal, CuPy array of shape (time, frequency).
-    """
-    bf = _Beamformer(
-        Y=Y,
-        X_mask=X_mask,
-        N_mask=N_mask,
-    )
-    if ban:
-        return bf.X_hat_mvdr_souden_ban
-    else:
-        return bf.X_hat_mvdr_souden
-
-
-class _Beamformer_RefChannel:
+class _Beamformer:
     def __init__(
         self,
         Y,
         X_mask,
         N_mask,
-        ref_channel=None,
+        return_snrs=False,
         eps=1e-10,
     ):
         if cp.ndim(Y) == 4:
@@ -128,7 +106,7 @@ class _Beamformer_RefChannel:
         assert self.X_mask.shape == (F, T), (self.X_mask.shape, F, T)
         assert self.N_mask.shape == (F, T), (self.N_mask.shape, F, T)
 
-        self.ref_channel = ref_channel
+        self.return_snrs = return_snrs
         self.eps = eps
 
     @cached_property
@@ -143,37 +121,36 @@ class _Beamformer_RefChannel:
 
     @cached_property
     def _w_mvdr_souden(self):
-        w_mvdr_souden, ref_channel = get_mvdr_vector_souden(
+        w_mvdr_souden, snrs = get_mvdr_vector_souden(
             self._Cov_X,
             self._Cov_N,
             eps=self.eps,
-            ref_channel=self.ref_channel,
-            return_ref_channel=True,
+            return_snrs=self.return_snrs,
         )
-        return w_mvdr_souden, ref_channel
+        return w_mvdr_souden, snrs
 
     @cached_property
     def _w_mvdr_souden_ban(self):
-        w_mvdr_souden, ref_channel = self._w_mvdr_souden
+        w_mvdr_souden, snrs = self._w_mvdr_souden
         w_mvdr_souden_ban = blind_analytic_normalization(
             w_mvdr_souden, self._Cov_N
         )
-        return w_mvdr_souden_ban, ref_channel
+        return w_mvdr_souden_ban, snrs
 
     @cached_property
     def X_hat_mvdr_souden(self):
-        w_mvdr_souden, ref_channel = self._w_mvdr_souden
+        w_mvdr_souden, snrs = self._w_mvdr_souden
         enhanced = apply_beamforming_vector(w_mvdr_souden, self.Y).T
-        return enhanced, ref_channel
+        return enhanced, snrs
 
     @cached_property
     def X_hat_mvdr_souden_ban(self):
-        w_mvdr_souden_ban, ref_channel = self._w_mvdr_souden_ban
+        w_mvdr_souden_ban, snrs = self._w_mvdr_souden_ban
         enhanced = apply_beamforming_vector(w_mvdr_souden_ban, self.Y).T
-        return enhanced, ref_channel
+        return enhanced, snrs
 
 
-def beamform_mvdr_with_ref_channel(Y, X_mask, N_mask, ban=False, ref_channel=None, eps=1e-10):
+def beamform_mvdr(Y, X_mask, N_mask, ban=False, return_snrs=False):
     """
     Souden MVDR beamformer.
     Args:
@@ -184,34 +161,14 @@ def beamform_mvdr_with_ref_channel(Y, X_mask, N_mask, ban=False, ref_channel=Non
     Returns:
         X_hat: Beamformed signal, CuPy array of shape (time, frequency).
     """
-    bf = _Beamformer_RefChannel(
+    bf = _Beamformer(
         Y=Y,
         X_mask=X_mask,
         N_mask=N_mask,
-        ref_channel=ref_channel,
-        eps=eps,
+        return_snrs=return_snrs,
     )
     if ban:
         return bf.X_hat_mvdr_souden_ban
     else:
         return bf.X_hat_mvdr_souden
 
-
-def beamform_mvdr2(Y, X, N, ban=False):
-    """
-    Souden MVDR beamformer.
-    Args:
-        Y: CuPy array of shape (channel, time, frequency).
-        X_mask: CuPy array of shape (time, frequency).
-        N_mask: CuPy array of shape (time, frequency).
-        ban: If True, use blind analytic normalization.
-    Returns:
-        X_hat: Beamformed signal, CuPy array of shape (time, frequency).
-    """
-    CovX = cp.einsum("...mtf,...ntf->...mntf", X, X.conj()).mean(axis=-2).transpose(2,0,1)
-    CovN = cp.einsum("...mtf,...ntf->...mntf", N, N.conj()).mean(axis=-2).transpose(2,0,1)
-    w_mvdr_souden = get_mvdr_vector_souden(CovX, CovN, eps=1e-5)
-    w_mvdr_souden = blind_analytic_normalization(
-        w_mvdr_souden, CovN
-    )
-    return apply_beamforming_vector(w_mvdr_souden, Y.transpose(2,0,1))
